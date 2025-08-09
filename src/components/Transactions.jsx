@@ -1,3 +1,4 @@
+// src/components/Transactions.jsx
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 
@@ -12,16 +13,22 @@ export default function Transactions({ user }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
 
+  // Intl formatter for INR. Change currencyDisplay to 'code' if you prefer "INR 1,000.00"
+  const formatter = new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    currencyDisplay: 'symbol', // 'symbol' => ₹, 'code' => INR
+    maximumFractionDigits: 2,
+  });
+
   useEffect(() => {
     fetchTransactions();
-    // optional: add realtime subscription for this user's transactions
     const channel = supabase
       .channel(`public:transactions:user=${user.id}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'transactions', filter: `user_id=eq.${user.id}` },
-        (payload) => {
-          // simple approach: re-fetch
+        () => {
           fetchTransactions();
         }
       )
@@ -95,13 +102,26 @@ export default function Transactions({ user }) {
     { income: 0, expense: 0 }
   );
 
+  const formatted = {
+    income: formatter.format(totals.income),
+    expense: formatter.format(totals.expense),
+    balance: formatter.format(totals.income - totals.expense),
+  };
+
   return (
     <div>
       <div className="card">
         <h2>Add transaction</h2>
         <form onSubmit={addTransaction}>
           <label>Amount</label>
-          <input required type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <input
+            required
+            type="number"
+            step="0.01"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.00"
+          />
 
           <label>Type</label>
           <select value={type} onChange={(e) => setType(e.target.value)}>
@@ -128,9 +148,9 @@ export default function Transactions({ user }) {
       <div className="card">
         <h2>Summary</h2>
         <div className="summary">
-          <div>Income: <strong>${totals.income.toFixed(2)}</strong></div>
-          <div>Expense: <strong>${totals.expense.toFixed(2)}</strong></div>
-          <div>Balance: <strong>${(totals.income - totals.expense).toFixed(2)}</strong></div>
+          <div>Income: <strong>{formatted.income}</strong></div>
+          <div>Expense: <strong>{formatted.expense}</strong></div>
+          <div>Balance: <strong>{formatted.balance}</strong></div>
         </div>
       </div>
 
@@ -151,18 +171,25 @@ export default function Transactions({ user }) {
               </tr>
             </thead>
             <tbody>
-              {transactions.map((t) => (
-                <tr key={t.id}>
-                  <td>{new Date(t.date).toLocaleDateString()}</td>
-                  <td>{t.type}</td>
-                  <td>{t.category}</td>
-                  <td className={t.type === 'income' ? 'income' : 'expense'}>${parseFloat(t.amount).toFixed(2)}</td>
-                  <td>{t.notes}</td>
-                  <td>
-                    <button className="danger" onClick={() => deleteTransaction(t.id)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
+              {transactions.map((t) => {
+                const v = parseFloat(t.amount) || 0;
+                // show negative for expenses so formatter handles sign+currency
+                const signed = t.type === 'expense' ? -v : v;
+                return (
+                  <tr key={t.id}>
+                    <td>{new Date(t.date).toLocaleDateString()}</td>
+                    <td>{t.type}</td>
+                    <td>{t.category}</td>
+                    <td className={t.type === 'income' ? 'income' : 'expense'}>
+                      {formatter.format(signed)}
+                    </td>
+                    <td>{t.notes}</td>
+                    <td>
+                      <button className="danger" onClick={() => deleteTransaction(t.id)}>Delete</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
